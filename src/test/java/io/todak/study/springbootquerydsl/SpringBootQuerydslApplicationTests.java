@@ -30,9 +30,7 @@ class SpringBootQuerydslApplicationTests {
 
         Hello result = query.selectFrom(qHello)
                 .fetchOne();
-        
-        //TODO : H2 데이터베이스 설치부터 다시 듣기
-        
+
         assertEquals(hello.getId(), result.getId());
         assertEquals(hello, result);
     }
