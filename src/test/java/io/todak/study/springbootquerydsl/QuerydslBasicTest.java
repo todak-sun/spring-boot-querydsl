@@ -2,7 +2,11 @@ package io.todak.study.springbootquerydsl;
 
 import com.querydsl.core.QueryResults;
 import com.querydsl.core.Tuple;
+import com.querydsl.core.types.Projections;
+import com.querydsl.jpa.JPAExpressions;
+import com.querydsl.jpa.impl.JPAQuery;
 import com.querydsl.jpa.impl.JPAQueryFactory;
+import io.todak.study.springbootquerydsl.dto.MemberDto;
 import io.todak.study.springbootquerydsl.entity.Member;
 import io.todak.study.springbootquerydsl.entity.QMember;
 import io.todak.study.springbootquerydsl.entity.QTeam;
@@ -15,6 +19,8 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.transaction.annotation.Transactional;
 
 import javax.persistence.EntityManager;
+import javax.persistence.EntityManagerFactory;
+import javax.persistence.PersistenceUnit;
 
 import java.util.List;
 
@@ -216,9 +222,206 @@ public class QuerydslBasicTest {
         assertThat(teamB.get(member.age.avg())).isEqualTo(35); // (30 + 40) / 2
     }
 
+    /**
+     * 팀 A에 소속된 모든 회원
+     */
     @Test
-    public void join() throws Exception {
+    public void join() {
+        List<Member> teamA = query.selectFrom(member)
+                .join(member.team, team)
+                .where(team.name.eq("teamA"))
+                .fetch();
 
+        assertThat(teamA)
+                .extracting("username")
+                .containsExactly("member1", "member2");
+
+    }
+
+    /**
+     * 회원과 팀을 조인하면서, 팀 이름이 teamA인 팀만 조인.
+     */
+    @Test
+    public void join_on_filterling() {
+        // select m, t from Member m left join m.team t on t.name = 'teamA'
+
+        List<Tuple> result = query.select(member, team)
+                .from(member)
+                .leftJoin(member.team, team).on(team.name.eq("teamA"))
+                .fetch();
+
+
+        for (Tuple t : result) {
+            System.out.println("tuple = " + t);
+        }
+    }
+
+    @Test
+    public void join_on_no_relation() {
+        em.persist(new Member("teamA"));
+        em.persist(new Member("teamB"));
+        em.persist(new Member("teamC"));
+
+        List<Tuple> result = query.select(member, team)
+                .from(member)
+                .join(team)
+                .on(member.username.eq(team.name))
+                .fetch();
+
+        for (Tuple t : result) {
+            System.out.println("tuple = " + t);
+        }
+    }
+
+    @PersistenceUnit
+    EntityManagerFactory emf;
+
+    @Test
+    public void fetch_join_no() {
+        em.flush();
+        em.clear();
+
+        Member findMember = query
+                .selectFrom(member)
+                .where(member.username.eq("member1"))
+                .fetchOne();
+
+        boolean loaded = emf.getPersistenceUnitUtil().isLoaded(findMember.getTeam());
+        org.junit.jupiter.api.Assertions.assertFalse(loaded);
+    }
+
+    @Test
+    public void feth_join_use() {
+        em.flush();
+        em.clear();
+
+        Member findMember = query.selectFrom(member)
+                .join(member.team, team).fetchJoin()
+                .where(member.username.eq("member1"))
+                .fetchOne();
+
+        boolean loaded = emf.getPersistenceUnitUtil().isLoaded(findMember.getTeam());
+        org.junit.jupiter.api.Assertions.assertTrue(loaded);
+    }
+
+    /**
+     * 나이가 가장 많은 회원을 조회
+     */
+    @Test
+    public void sub_query() {
+
+        QMember memberSub = new QMember("memberSub");
+
+        List<Member> fetch = query.selectFrom(member)
+                .where(member.age.eq(
+                        JPAExpressions.select(memberSub.age.max())
+                                .from(memberSub)
+                ))
+                .fetch();
+
+        assertThat(fetch).extracting("age").containsExactly(40);
+    }
+
+    /**
+     * 나이가 평균 이상 회원을 조회
+     */
+    @Test
+    public void sub_query_goe() {
+
+        QMember memberSub = new QMember("memberSub");
+
+        List<Member> result = query.selectFrom(member)
+                .where(member.age.goe(
+                        JPAExpressions.select(memberSub.age.avg())
+                                .from(memberSub)
+                ))
+                .fetch();
+
+        assertThat(result).extracting("age").containsExactly(30, 40);
+    }
+
+    @Test
+    public void sub_query_in() {
+        QMember memberSub = new QMember("memberSub");
+
+//        List<Member> result = query.selectFrom(member)
+//                .where(member.age.in(
+//                        JPAExpressions.select(memberSub.age)
+//                        .from(memberSub)
+//                        .where(memberSub.age.gt(10))
+//                )).fetch();
+
+        List<Member> result = query.selectFrom(member)
+                .where(member.age.in(
+                        JPAExpressions.select(member.age)
+                                .from(member)
+                                .where(member.age.gt(10))
+                )).fetch();
+
+        assertThat(result).extracting("age").containsExactly(20, 30, 40);
+    }
+
+    @Test
+    public void select_sub_query() {
+        List<Tuple> fetch = query.select(
+                member.username,
+                JPAExpressions.select(member.age.avg())
+                        .from(member)
+
+        ).from(member).fetch();
+
+        for (Tuple t : fetch) {
+            System.out.println("tuple = " + t);
+        }
+
+    }
+
+
+    @Test
+    public void findDtoByJPQL() {
+        List<MemberDto> result = em.createQuery("select new io.todak.study.springbootquerydsl.dto.MemberDto(m.username, m.age) from Member m", MemberDto.class)
+                .getResultList();
+
+        for (MemberDto memberDto : result) {
+            System.out.println(memberDto);
+        }
+
+    }
+
+    @Test
+    public void findDtoByQueryDslWithSetter() {
+        List<MemberDto> fetch = query.select(Projections.bean(MemberDto.class,
+                member.username, member.age))
+                .from(member)
+                .fetch();
+
+        for (MemberDto memberDto : fetch) {
+            System.out.println(memberDto);
+        }
+    }
+
+    @Test
+    public void findDtoByField() {
+        List<MemberDto> result = query
+                .select(Projections.fields(MemberDto.class,
+                        member.username,
+                        member.age))
+                .from(member).fetch();
+
+        for (MemberDto memberDto : result) {
+            System.out.println(memberDto);
+        }
+    }
+
+    @Test
+    public void findDtoByConstructor() {
+        List<MemberDto> result = query
+                .select(Projections.constructor(MemberDto.class, member.username, member.age))
+                .from(member).fetch();
+
+        for (MemberDto memberDto : result) {
+            System.out.println(memberDto);
+        }
     }
 
 
