@@ -1,31 +1,32 @@
 package io.todak.study.springbootquerydsl;
 
+import com.querydsl.core.BooleanBuilder;
 import com.querydsl.core.QueryResults;
 import com.querydsl.core.Tuple;
 import com.querydsl.core.types.Projections;
+import com.querydsl.core.types.dsl.BooleanExpression;
+import com.querydsl.core.types.dsl.Expressions;
 import com.querydsl.jpa.JPAExpressions;
-import com.querydsl.jpa.impl.JPAQuery;
 import com.querydsl.jpa.impl.JPAQueryFactory;
 import io.todak.study.springbootquerydsl.dto.MemberDto;
+import io.todak.study.springbootquerydsl.dto.QMemberDto;
 import io.todak.study.springbootquerydsl.entity.Member;
 import io.todak.study.springbootquerydsl.entity.QMember;
-import io.todak.study.springbootquerydsl.entity.QTeam;
 import io.todak.study.springbootquerydsl.entity.Team;
-import org.assertj.core.api.Assertions;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.test.annotation.Commit;
 import org.springframework.transaction.annotation.Transactional;
 
 import javax.persistence.EntityManager;
 import javax.persistence.EntityManagerFactory;
 import javax.persistence.PersistenceUnit;
-
 import java.util.List;
 
 import static io.todak.study.springbootquerydsl.entity.QMember.member;
-import static io.todak.study.springbootquerydsl.entity.QTeam.*;
+import static io.todak.study.springbootquerydsl.entity.QTeam.team;
 import static org.assertj.core.api.Assertions.assertThat;
 
 @SpringBootTest
@@ -423,6 +424,123 @@ public class QuerydslBasicTest {
             System.out.println(memberDto);
         }
     }
+
+    @Test
+    public void findDtoByQueryProjection() {
+        List<MemberDto> fetch = query.select(new QMemberDto(member.username, member.age))
+                .from(member)
+                .fetch();
+
+        for (MemberDto memberDto : fetch) {
+            System.out.println("memberDto = " + memberDto);
+        }
+    }
+
+    @Test
+    public void dynamicQuery_BooleanBuilder() {
+        String usernameParam = "member1";
+        Integer ageParam = 10;
+
+        List<Member> result = searchMember1(usernameParam, ageParam);
+        assertThat(result.size()).isEqualTo(1);
+    }
+
+    private List<Member> searchMember1(String usernameCond, Integer ageCond) {
+        BooleanBuilder builder = new BooleanBuilder();
+        if (usernameCond != null) {
+            builder.and(member.username.eq(usernameCond));
+        }
+
+        if (ageCond != null) {
+            builder.and(member.age.eq(ageCond));
+        }
+        return query.selectFrom(member)
+                .where(builder)
+                .fetch();
+    }
+
+    @Test
+    public void dynamicQuery_whereParam() {
+        String usernameParam = "member1";
+        Integer ageParam = 10;
+
+        List<Member> result = searchMember2(usernameParam, ageParam);
+        assertThat(result.size()).isEqualTo(1);
+    }
+
+    private List<Member> searchMember2(String usernameCond, Integer ageCond) {
+        return query.selectFrom(member)
+                .where(usernameEq(usernameCond).and(ageEq(ageCond)))
+                .fetch();
+    }
+
+    private BooleanExpression usernameEq(String usernameCond) {
+        return usernameCond != null ? member.username.eq(usernameCond) : null;
+    }
+
+    private BooleanExpression ageEq(Integer ageCond) {
+        return ageCond != null ? member.age.eq(ageCond) : null;
+    }
+
+    @Test
+    @Commit
+    public void bulk_update() {
+        // member1 = 10 -> DB member1
+        // member1 = 20 -> DB member2
+        // member1 = 30 -> DB member3
+        // member1 = 40 -> DB member4
+
+        long count = query.update(member)
+                .set(member.username, "비회원")
+                .where(member.age.lt(28))
+                .execute();
+
+        // member1 = 10 -> DB 비회원
+        // member1 = 20 -> DB 비회원
+        // member1 = 30 -> DB member3
+        // member1 = 40 -> DB member4
+        // 영속성 컨텍스트를 날려줘야, Repeatable Read가 일어나지 않는다.
+        em.flush();
+        em.clear();
+
+        List<Member> result = query
+                .selectFrom(member)
+                .fetch();
+
+        for (Member member1 : result) {
+            System.out.println("member1 = " + member1);
+        }
+    }
+
+    @Test
+    public void buldAdd() {
+        long execute = query.update(member)
+                .set(member.age, member.age.add(1))
+                .execute();
+    }
+
+    @Test
+    public void sqlFunction() {
+        List<String> fetch = query.select(Expressions.stringTemplate("function('replace', {0}, {1}, {2})",
+                member.username, "member", "M"))
+                .from(member)
+                .fetch();
+
+        for (String s : fetch) {
+            System.out.println(s);
+        }
+    }
+
+    @Test
+    public void sqlFunction2() {
+        List<String> result = query
+                .select(member.username)
+                .from(member)
+                .where(member.username.eq(member.username.lower()))
+                .fetch();
+    }
+
+
 
 
 }
