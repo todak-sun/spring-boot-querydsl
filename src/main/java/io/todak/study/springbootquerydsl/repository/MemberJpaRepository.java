@@ -1,7 +1,6 @@
 package io.todak.study.springbootquerydsl.repository;
 
 import com.querydsl.core.BooleanBuilder;
-import com.querydsl.core.types.Predicate;
 import com.querydsl.core.types.dsl.BooleanExpression;
 import com.querydsl.jpa.impl.JPAQueryFactory;
 import io.todak.study.springbootquerydsl.dto.MemberSearchCondition;
@@ -9,7 +8,6 @@ import io.todak.study.springbootquerydsl.dto.MemberTeamDto;
 import io.todak.study.springbootquerydsl.dto.QMemberTeamDto;
 import io.todak.study.springbootquerydsl.entity.Member;
 import org.springframework.stereotype.Repository;
-import org.springframework.util.StringUtils;
 
 import javax.persistence.EntityManager;
 import java.util.List;
